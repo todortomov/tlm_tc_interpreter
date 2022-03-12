@@ -1,0 +1,4 @@
+*.o
+*.txt
+*.swp
+telecommand_interpreter
