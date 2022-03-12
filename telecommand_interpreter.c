@@ -1,29 +1,32 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 /* Input line length maximum */
 #define LINE_LEN_MAX 255
 
-/* Command id minimum */
+/* Command id minimum. Supported values: [INT_MIN..CMD_ID_MAX] */
 #define CMD_ID_MIN 0
-/* Command id maximum */
+/* Command id maximum. Supported values: [CMD_ID_MIN..INT_MAX] */
 #define CMD_ID_MAX 100
 
-/* Command priority minimum */
+/* Command priority minimum. Supported values: [INT_MIN..CMD_PRIO_MAX] */
 #define CMD_PRIO_MIN 0
-/* Command priority maximum */
+/* Command priority maximum. Supported values: [CMD_PRIO_MIN..INT_MAX] */
 #define CMD_PRIO_MAX 255
 
-/* Command data minimum */
+/* Command data minimum. Supported values: [INT_MIN..CMD_DATA_MAX] */
 #define CMD_DATA_MIN 0
-/* Command data maximum */
+/* Command data maximum. Supported values: [CMD_DATA_MIN..INT_MAX] */
 #define CMD_DATA_MAX INT_MAX
 
-/* Command entry id minimum */
+/* Command entry id minimum. Supported values: [INT_MIN..CMD_ENTRY_MAX] */
 #define CMD_ENTRY_MIN 0
-/* Command entry id maximum */
+/* Command entry id maximum. Supported values: [CMD_ENTRY_MIN..INT_MAX] */
 #define CMD_ENTRY_MAX INT_MAX
 
 enum cmd_arg_num {
@@ -45,6 +48,8 @@ struct cmd_desc {
 		int (*process_arg_two)(int arg1, int arg2, void *queue);
 	};
 };
+
+static int comp_cmd_id(const void *c1, const void *c2);
 
 int process_insert_lo(int data, void *queue);
 int process_insert(int prio, int data, void *queue);
@@ -70,6 +75,11 @@ int main(int argc, char *argv[])
 {
 	FILE *input;
 	char line[LINE_LEN_MAX];
+	long cmd_tmp, arg_tmp;
+	int arg1, arg2;
+	struct cmd_desc cmd_search;
+	struct cmd_desc *cmd_found;
+	char *endptr, *curptr;
 	int ret = 0;
 
 	if (argc != 3 || strcmp(argv[1], "-i")) {
@@ -93,6 +103,102 @@ int main(int argc, char *argv[])
 			ret = 1;
 			goto end_fclose;
 		}
+		line[strlen(line) - 1] = '\0';
+
+		errno = 0;
+		cmd_tmp = strtol(line, &endptr, 10);
+		if ((errno != 0 && cmd_tmp == 0) ||
+		    (errno == ERANGE && (cmd_tmp == LONG_MAX || cmd_tmp == LONG_MIN))) {
+			fprintf(stderr, "%s: error reading command from line \"%s\": %s\n",
+				argv[0], line, strerror(errno));
+			ret = 1;
+			goto end_fclose;
+		}
+		if (line == endptr) {
+			fprintf(stderr, "%s: error reading command from line \"%s\"\n",
+				argv[0], line);
+			ret = 1;
+			goto end_fclose;
+		}
+
+		if (cmd_tmp < CMD_ID_MIN || cmd_tmp > CMD_ID_MAX) {
+			fprintf(stderr, "%s: out of bounds command %ld from line \"%s\"\n",
+				argv[0], cmd_tmp, line);
+			ret = 1;
+			goto end_fclose;
+		}
+
+		cmd_search.cmd_id = (int) cmd_tmp;
+		cmd_found = bsearch(&cmd_search, cmd_list, ARRAY_SIZE(cmd_list),
+				    sizeof(struct cmd_desc), comp_cmd_id);
+		if (cmd_found == NULL) {
+			fprintf(stderr, "%s: unexpected command %ld from line \"%s\"\n",
+				argv[0], cmd_tmp, line);
+			ret = 1;
+			goto end_fclose;
+		}
+
+		if (cmd_found->num_arg == CMD_ARG_ONE ||
+		    cmd_found->num_arg == CMD_ARG_TWO) {
+			curptr = endptr;
+			errno = 0;
+			arg_tmp = strtol(curptr, &endptr, 10);
+			if ((errno != 0 && arg_tmp == 0) ||
+			    (errno == ERANGE && (arg_tmp == LONG_MAX || arg_tmp == LONG_MIN))) {
+				fprintf(stderr, "%s: error reading arg1 from line \"%s\": %s\n",
+						argv[0], line, strerror(errno));
+				ret = 1;
+				goto end_fclose;
+			}
+			if (curptr == endptr) {
+				fprintf(stderr, "%s: error reading arg1 from line \"%s\"\n",
+						argv[0], line);
+				ret = 1;
+				goto end_fclose;
+			}
+
+			if (arg_tmp < cmd_found->arg1_min || arg_tmp > cmd_found->arg1_max) {
+				fprintf(stderr, "%s: out of bounds arg1 %ld from line \"%s\"\n",
+					argv[0], arg_tmp, line);
+				ret = 1;
+				goto end_fclose;
+			}
+			arg1 = (int) arg_tmp;
+		}
+
+		if (cmd_found->num_arg == CMD_ARG_TWO) {
+			curptr = endptr;
+			errno = 0;
+			arg_tmp = strtol(curptr, &endptr, 10);
+			if ((errno != 0 && arg_tmp == 0) ||
+			    (errno == ERANGE && (arg_tmp == LONG_MAX || arg_tmp == LONG_MIN))) {
+				fprintf(stderr, "%s: error reading arg2 from line \"%s\": %s\n",
+						argv[0], line, strerror(errno));
+				ret = 1;
+				goto end_fclose;
+			}
+			if (curptr == endptr) {
+				fprintf(stderr, "%s: error reading arg2 from line \"%s\"\n",
+						argv[0], line);
+				ret = 1;
+				goto end_fclose;
+			}
+
+			if (arg_tmp < cmd_found->arg2_min || arg_tmp > cmd_found->arg2_max) {
+				fprintf(stderr, "%s: out of bounds arg2 %ld from line \"%s\"\n",
+					argv[0], arg_tmp, line);
+				ret = 1;
+				goto end_fclose;
+			}
+			arg2 = (int) arg_tmp;
+		}
+
+		if (*endptr != '\0') {
+			fprintf(stderr, "%s: trailing characters on line \"%s\"\n",
+					argv[0], line);
+			ret = 1;
+			goto end_fclose;
+		}
 	}
 
 end_fclose:
@@ -100,6 +206,14 @@ end_fclose:
 
 end:
 	return ret;
+}
+
+static int comp_cmd_id(const void *c1, const void *c2)
+{
+	struct cmd_desc *cmd1 = (struct cmd_desc *) c1;
+	struct cmd_desc *cmd2 = (struct cmd_desc *) c2;
+
+	return cmd1->cmd_id - cmd2->cmd_id;
 }
 
 int process_insert_lo(int data, void *queue)
