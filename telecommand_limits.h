@@ -18,7 +18,7 @@
 /* Command data maximum. Supported values: [CMD_DATA_MIN..INT_MAX] */
 #define CMD_DATA_MAX INT_MAX
 
-/* Command entry id minimum. Supported values: [INT_MIN..CMD_ENTRY_MAX] */
+/* Command entry id minimum. Supported values: [INT_MIN + 1..CMD_ENTRY_MAX] */
 #define CMD_ENTRY_MIN 0
 /* Command entry id maximum. Supported values: [CMD_ENTRY_MIN..INT_MAX] */
 #define CMD_ENTRY_MAX INT_MAX
